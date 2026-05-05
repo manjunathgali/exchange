@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="description" content="Instant peer-to-peer file sharing. No signup, no install. Just open on two devices and send.">
+  <meta name="theme-color" content="#1a1a2e">
+  <title>LocalDrop — Instant File Sharing</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📡</text></svg>">
+  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📡</text></svg>">
+</head>
+<body>
+  <header>
+    <h1>📡 LocalDrop</h1>
+    <p class="subtitle">Instant file sharing on your network</p>
+  </header>
+
+  <main>
+    <!-- Connection status -->
+    <div id="self-info" class="self-info hidden">
+      <span class="device-icon" id="self-icon">💻</span>
+      <div class="self-details">
+        <span id="self-name">Connecting...</span>
+        <span class="self-hint">You on this device</span>
+      </div>
+      <span class="status-dot online" id="status-dot"></span>
+    </div>
+
+    <!-- Peers area -->
+    <div id="peers-container" class="peers-container">
+      <div id="no-peers" class="no-peers">
+        <div class="spinner"></div>
+        <p>Looking for devices on your network...</p>
+        <p class="hint">Open this page on another device connected to the same Wi-Fi</p>
+      </div>
+      <div id="peers-grid" class="peers-grid hidden"></div>
+    </div>
+
+    <!-- Drop zone overlay -->
+    <div id="drop-zone" class="drop-zone hidden">
+      <div class="drop-zone-content">
+        <span class="drop-icon">📂</span>
+        <p>Drop file to send</p>
+      </div>
+    </div>
+
+    <!-- File input (hidden) -->
+    <input type="file" id="file-input" multiple hidden>
+
+    <!-- Transfer progress -->
+    <div id="transfer-overlay" class="transfer-overlay hidden">
+      <div class="transfer-card">
+        <h3 id="transfer-title">Sending file...</h3>
+        <p id="transfer-file-name" class="transfer-file-name"></p>
+        <div class="progress-bar">
+          <div id="progress-fill" class="progress-fill"></div>
+        </div>
+        <p id="transfer-status">0%</p>
+        <button id="cancel-transfer" class="btn-cancel">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Receive prompt -->
+    <div id="receive-overlay" class="transfer-overlay hidden">
+      <div class="transfer-card">
+        <h3>📥 Incoming File</h3>
+        <p id="receive-info"></p>
+        <div class="btn-group">
+          <button id="accept-btn" class="btn-accept">Accept</button>
+          <button id="reject-btn" class="btn-reject">Decline</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast notifications -->
+    <div id="toast-container" class="toast-container"></div>
+  </main>
+
+  <footer>
+    <p>Files transfer directly between devices via WebRTC. Nothing is stored on any server.</p>
+    <p class="footer-hint">Both devices must be on the same network (same public IP).</p>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>

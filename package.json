@@ -1,0 +1,13 @@
+{
+  "name": "localdrop",
+  "version": "1.0.0",
+  "description": "Pairdrop-like instant peer-to-peer file sharing via WebRTC",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js",
+    "build": "echo done"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
