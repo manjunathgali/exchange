@@ -16,6 +16,8 @@
   let pollTimer = null;
   let isTransferring = false;
   let selectedPeerForDrop = null;
+  let activeChatPeer = null; // peerId of the peer we're chatting with
+  const chatHistory = new Map(); // peerId -> [{ text, sent, time }]
 
   const CHUNK_SIZE = 64 * 1024; // 64KB chunks
   const POLL_IDLE_MS = 2000; // Poll interval when idle
@@ -43,6 +45,19 @@
   const acceptBtn = document.getElementById('accept-btn');
   const rejectBtn = document.getElementById('reject-btn');
   const toastContainer = document.getElementById('toast-container');
+
+  // Chat & action menu elements
+  const chatOverlay = document.getElementById('chat-overlay');
+  const chatPeerName = document.getElementById('chat-peer-name');
+  const chatMessages = document.getElementById('chat-messages');
+  const chatInput = document.getElementById('chat-input');
+  const chatSendBtn = document.getElementById('chat-send');
+  const chatCloseBtn = document.getElementById('chat-close');
+  const peerActionOverlay = document.getElementById('peer-action-overlay');
+  const actionPeerName = document.getElementById('action-peer-name');
+  const actionSendFile = document.getElementById('action-send-file');
+  const actionSendMsg = document.getElementById('action-send-msg');
+  const actionCancel = document.getElementById('action-cancel');
 
   // ============================================================
   // DEVICE DETECTION
@@ -178,6 +193,7 @@
       case 'ice-candidate': handleIceCandidate(msg); break;
       case 'file-request': handleFileRequest(msg); break;
       case 'file-response': handleFileResponse(msg); break;
+      case 'chat-message': handleChatMessage(msg); break;
     }
   }
 
@@ -219,9 +235,32 @@
 
   function selectPeer(peerId) {
     selectedPeerForDrop = peerId;
+    const peer = peers.get(peerId);
+    if (!peer) return;
+
+    // Show action menu
+    actionPeerName.textContent = peer.name;
+    peerActionOverlay.dataset.peerId = peerId;
+    peerActionOverlay.classList.remove('hidden');
+  }
+
+  // Action menu handlers
+  actionSendFile.addEventListener('click', () => {
+    const peerId = peerActionOverlay.dataset.peerId;
+    peerActionOverlay.classList.add('hidden');
     fileInput.dataset.targetPeer = peerId;
     fileInput.click();
-  }
+  });
+
+  actionSendMsg.addEventListener('click', () => {
+    const peerId = peerActionOverlay.dataset.peerId;
+    peerActionOverlay.classList.add('hidden');
+    openChat(peerId);
+  });
+
+  actionCancel.addEventListener('click', () => {
+    peerActionOverlay.classList.add('hidden');
+  });
 
   // ============================================================
   // FILE SELECTION & DRAG-DROP
@@ -655,6 +694,97 @@
     isTransferring = false;
     startPolling(POLL_IDLE_MS);
   });
+
+  // ============================================================
+  // CHAT / MESSAGING
+  // ============================================================
+  function openChat(peerId) {
+    activeChatPeer = peerId;
+    const peer = peers.get(peerId);
+    chatPeerName.textContent = peer ? `💬 ${peer.name}` : '💬 Chat';
+    renderChatMessages();
+    chatOverlay.classList.remove('hidden');
+    chatInput.focus();
+  }
+
+  function closeChat() {
+    chatOverlay.classList.add('hidden');
+    activeChatPeer = null;
+  }
+
+  chatCloseBtn.addEventListener('click', closeChat);
+  chatOverlay.addEventListener('click', (e) => {
+    if (e.target === chatOverlay) closeChat();
+  });
+
+  function renderChatMessages() {
+    const messages = chatHistory.get(activeChatPeer) || [];
+    if (messages.length === 0) {
+      chatMessages.innerHTML = '<div class="chat-empty">No messages yet. Say hi! 👋</div>';
+      return;
+    }
+
+    chatMessages.innerHTML = '';
+    for (const msg of messages) {
+      const div = document.createElement('div');
+      div.className = `chat-msg ${msg.sent ? 'sent' : 'received'}`;
+      div.innerHTML = `${escapeHtml(msg.text)}<span class="msg-time">${msg.time}</span>`;
+      chatMessages.appendChild(div);
+    }
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  function sendChatMessage() {
+    const text = chatInput.value.trim();
+    if (!text || !activeChatPeer) return;
+
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    // Store locally
+    if (!chatHistory.has(activeChatPeer)) chatHistory.set(activeChatPeer, []);
+    chatHistory.get(activeChatPeer).push({ text, sent: true, time });
+
+    // Send via signaling server
+    sendSignal(activeChatPeer, { type: 'chat-message', text });
+
+    chatInput.value = '';
+    renderChatMessages();
+  }
+
+  chatSendBtn.addEventListener('click', sendChatMessage);
+  chatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendChatMessage();
+    }
+  });
+
+  function handleChatMessage(msg) {
+    const fromPeer = peers.get(msg.from);
+    const fromName = fromPeer ? fromPeer.name : 'Someone';
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    // Store in history
+    if (!chatHistory.has(msg.from)) chatHistory.set(msg.from, []);
+    chatHistory.get(msg.from).push({ text: msg.text, sent: false, time });
+
+    // If chat is open with this peer, re-render
+    if (activeChatPeer === msg.from) {
+      renderChatMessages();
+    } else {
+      // Show notification toast that opens chat on click
+      const toast = document.createElement('div');
+      toast.className = 'toast message';
+      toast.textContent = `💬 ${fromName}: ${msg.text.length > 40 ? msg.text.slice(0, 40) + '...' : msg.text}`;
+      toast.style.cursor = 'pointer';
+      toast.addEventListener('click', () => {
+        toast.remove();
+        openChat(msg.from);
+      });
+      toastContainer.appendChild(toast);
+      setTimeout(() => { if (toast.parentNode) toast.remove(); }, 5000);
+    }
+  }
 
   // ============================================================
   // UTILITIES

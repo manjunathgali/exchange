@@ -75,6 +75,41 @@
 
     <!-- Toast notifications -->
     <div id="toast-container" class="toast-container"></div>
+
+    <!-- Chat / Message panel -->
+    <div id="chat-overlay" class="chat-overlay hidden">
+      <div class="chat-panel">
+        <div class="chat-header">
+          <h3 id="chat-peer-name">Chat</h3>
+          <button id="chat-close" class="chat-close-btn" aria-label="Close chat">✕</button>
+        </div>
+        <div id="chat-messages" class="chat-messages"></div>
+        <div class="chat-input-row">
+          <input type="text" id="chat-input" class="chat-input" placeholder="Type a message..." autocomplete="off">
+          <button id="chat-send" class="chat-send-btn" aria-label="Send message">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Peer action menu -->
+    <div id="peer-action-overlay" class="transfer-overlay hidden">
+      <div class="transfer-card peer-action-card">
+        <h3 id="action-peer-name">Send to peer</h3>
+        <div class="action-buttons">
+          <button id="action-send-file" class="action-btn action-file">
+            <span class="action-icon">📄</span>
+            <span>Send File</span>
+          </button>
+          <button id="action-send-msg" class="action-btn action-msg">
+            <span class="action-icon">💬</span>
+            <span>Send Message</span>
+          </button>
+        </div>
+        <button id="action-cancel" class="btn-cancel" style="margin-top:1rem;">Cancel</button>
+      </div>
+    </div>
   </main>
 
   <footer>
