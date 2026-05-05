@@ -984,14 +984,35 @@
   function requestLocation() {
     if (!navigator.geolocation) {
       locationDenied = true;
+      showLocationDeniedUI();
       return;
     }
 
+    // Check permission state first (if API available)
+    if (navigator.permissions && navigator.permissions.query) {
+      navigator.permissions.query({ name: 'geolocation' }).then((result) => {
+        if (result.state === 'denied') {
+          locationDenied = true;
+          showLocationDeniedUI();
+          return;
+        }
+        // prompt or granted — try to get position
+        doGetPosition();
+      }).catch(() => {
+        // permissions API not supported, just try
+        doGetPosition();
+      });
+    } else {
+      doGetPosition();
+    }
+  }
+
+  function doGetPosition() {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         selfLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
         locationDenied = false;
-        // Hide the "enable location" prompt
+        // Hide the "enable location" prompt, show map
         mapNoLocation.classList.add('hidden');
         mapContainer.classList.remove('hidden');
         // Re-register with location metadata
@@ -1005,18 +1026,30 @@
         }
         broadcastLocation();
         updateMapMarkers();
+        showToast('Location enabled!', 'success');
       },
       (err) => {
-        console.warn('Geolocation denied:', err.message);
+        console.warn('Geolocation error:', err.message);
         locationDenied = true;
-        // Show the "enable location" prompt if map is visible
-        if (!mapSection.classList.contains('hidden') && peerLocations.size === 0) {
-          mapContainer.classList.add('hidden');
-          mapNoLocation.classList.remove('hidden');
-        }
+        showLocationDeniedUI();
       },
-      { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
     );
+  }
+
+  function showLocationDeniedUI() {
+    if (!mapSection.classList.contains('hidden')) {
+      mapContainer.classList.add('hidden');
+      mapNoLocation.classList.remove('hidden');
+      // Update the message to show it's blocked
+      mapNoLocation.innerHTML = `
+        <p>📍 Location access is blocked by your browser</p>
+        <p style="font-size:0.75rem; margin-top:0.5rem; opacity:0.7;">
+          Click the 🔒 icon in your address bar → Allow location → Reload the page
+        </p>
+        <button id="request-location-btn" class="request-location-btn" onclick="location.reload()">Reload Page</button>
+      `;
+    }
   }
 
   // "Enable Location" button
