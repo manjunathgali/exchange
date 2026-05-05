@@ -4,12 +4,13 @@
 let redis = null;
 let useRedis = false;
 
-if (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN) {
+// Support both Vercel KV env vars and direct Upstash env vars
+const redisUrl = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
+const redisToken = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+
+if (redisUrl && redisToken) {
   const { Redis } = require('@upstash/redis');
-  redis = new Redis({
-    url: process.env.UPSTASH_REDIS_REST_URL,
-    token: process.env.UPSTASH_REDIS_REST_TOKEN,
-  });
+  redis = new Redis({ url: redisUrl, token: redisToken });
   useRedis = true;
 }
 
