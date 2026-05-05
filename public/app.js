@@ -162,11 +162,13 @@
 
   function syncPeers(peerList) {
     const newIds = new Set(peerList.map(p => p.id));
+    let hasNewPeers = false;
 
     // New peers
     for (const p of peerList) {
       if (!peers.has(p.id)) {
         showToast(`${p.name} appeared`, 'success');
+        hasNewPeers = true;
       }
       peers.set(p.id, p);
     }
@@ -176,11 +178,17 @@
       if (!newIds.has(id)) {
         peers.delete(id);
         cleanupPeerConnection(id);
+        peerLocations.delete(id);
         showToast(`${peer.name} left`);
       }
     }
 
     renderPeers();
+
+    // Share our location with new peers
+    if (hasNewPeers) {
+      onPeerJoinedSendLocation();
+    }
   }
 
   // ============================================================
@@ -194,6 +202,7 @@
       case 'file-request': handleFileRequest(msg); break;
       case 'file-response': handleFileResponse(msg); break;
       case 'chat-message': handleChatMessage(msg); break;
+      case 'location-update': handleLocationUpdate(msg); break;
     }
   }
 
@@ -787,6 +796,171 @@
   }
 
   // ============================================================
+  // MAP & LOCATION
+  // ============================================================
+  const mapSection = document.getElementById('map-section');
+  const mapContainer = document.getElementById('map');
+  const mapToggleBtn = document.getElementById('map-toggle');
+  let map = null;
+  let mapMarkers = new Map(); // peerId -> marker
+  let selfMarker = null;
+  let selfLocation = null;
+  let mapVisible = true;
+
+  function initMap() {
+    if (map) return;
+    map = L.map('map', {
+      zoomControl: false,
+      attributionControl: false
+    }).setView([20, 0], 2);
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19
+    }).addTo(map);
+
+    // Add zoom control to top-right
+    L.control.zoom({ position: 'topright' }).addTo(map);
+  }
+
+  function requestLocation() {
+    if (!navigator.geolocation) return;
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        selfLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        // Share location with peers via signaling
+        broadcastLocation();
+        updateMapMarkers();
+      },
+      (err) => {
+        console.warn('Geolocation denied:', err.message);
+        // Still show map if peers share their location
+      },
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
+    );
+  }
+
+  function broadcastLocation() {
+    if (!selfLocation || !selfPeer) return;
+    // Send location to all connected peers
+    peers.forEach((peer, peerId) => {
+      sendSignal(peerId, {
+        type: 'location-update',
+        lat: selfLocation.lat,
+        lng: selfLocation.lng
+      });
+    });
+  }
+
+  // Store peer locations
+  const peerLocations = new Map(); // peerId -> { lat, lng }
+
+  function handleLocationUpdate(msg) {
+    if (msg.lat && msg.lng) {
+      peerLocations.set(msg.from, { lat: msg.lat, lng: msg.lng });
+      updateMapMarkers();
+    }
+  }
+
+  function updateMapMarkers() {
+    const hasAnyLocation = selfLocation || peerLocations.size > 0;
+    if (!hasAnyLocation) return;
+
+    // Show map section
+    mapSection.classList.remove('hidden');
+    initMap();
+
+    const bounds = [];
+
+    // Self marker
+    if (selfLocation) {
+      bounds.push([selfLocation.lat, selfLocation.lng]);
+      if (selfMarker) {
+        selfMarker.setLatLng([selfLocation.lat, selfLocation.lng]);
+      } else {
+        const icon = L.divIcon({
+          className: '',
+          html: `<div class="device-marker self"></div>`,
+          iconSize: [14, 14],
+          iconAnchor: [7, 7]
+        });
+        selfMarker = L.marker([selfLocation.lat, selfLocation.lng], { icon })
+          .addTo(map)
+          .bindTooltip(`<div class="device-marker-label">📍 You (${selfPeer.name})</div>`, {
+            permanent: false,
+            direction: 'top',
+            offset: [0, -10],
+            className: ''
+          });
+      }
+    }
+
+    // Peer markers
+    peerLocations.forEach((loc, peerId) => {
+      bounds.push([loc.lat, loc.lng]);
+      const peer = peers.get(peerId);
+      const name = peer ? peer.name : 'Device';
+
+      if (mapMarkers.has(peerId)) {
+        mapMarkers.get(peerId).setLatLng([loc.lat, loc.lng]);
+      } else {
+        const icon = L.divIcon({
+          className: '',
+          html: `<div class="device-marker"></div>`,
+          iconSize: [14, 14],
+          iconAnchor: [7, 7]
+        });
+        const marker = L.marker([loc.lat, loc.lng], { icon })
+          .addTo(map)
+          .bindTooltip(`<div class="device-marker-label">💻 ${escapeHtml(name)}</div>`, {
+            permanent: false,
+            direction: 'top',
+            offset: [0, -10],
+            className: ''
+          });
+        mapMarkers.set(peerId, marker);
+      }
+    });
+
+    // Remove markers for peers that left
+    for (const [peerId, marker] of mapMarkers) {
+      if (!peerLocations.has(peerId)) {
+        map.removeLayer(marker);
+        mapMarkers.delete(peerId);
+      }
+    }
+
+    // Fit bounds
+    if (bounds.length > 0) {
+      if (bounds.length === 1) {
+        map.setView(bounds[0], 14);
+      } else {
+        map.fitBounds(bounds, { padding: [30, 30], maxZoom: 16 });
+      }
+    }
+
+    // Invalidate size in case map was hidden
+    setTimeout(() => map.invalidateSize(), 100);
+  }
+
+  // Map toggle
+  mapToggleBtn.addEventListener('click', () => {
+    mapVisible = !mapVisible;
+    mapContainer.classList.toggle('collapsed', !mapVisible);
+    mapToggleBtn.textContent = mapVisible ? 'Hide Map' : 'Show Map';
+    if (mapVisible && map) {
+      setTimeout(() => map.invalidateSize(), 100);
+    }
+  });
+
+  // Send location to new peers when they join
+  function onPeerJoinedSendLocation() {
+    if (selfLocation) {
+      broadcastLocation();
+    }
+  }
+
+  // ============================================================
   // UTILITIES
   // ============================================================
   function formatSize(bytes) {
@@ -837,5 +1011,6 @@
   // INIT
   // ============================================================
   join();
+  requestLocation();
 
 })();

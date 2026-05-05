@@ -7,6 +7,7 @@
   <meta name="theme-color" content="#1a1a2e">
   <title>LocalDrop — Instant File Sharing</title>
   <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📡</text></svg>">
   <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📡</text></svg>">
 </head>
@@ -35,6 +36,15 @@
         <p class="hint">Open this page on another device connected to the same Wi-Fi</p>
       </div>
       <div id="peers-grid" class="peers-grid hidden"></div>
+    </div>
+
+    <!-- Device Map -->
+    <div id="map-section" class="map-section hidden">
+      <div class="map-header">
+        <h3>📍 Device Locations</h3>
+        <button id="map-toggle" class="map-toggle-btn">Hide Map</button>
+      </div>
+      <div id="map" class="map-container"></div>
     </div>
 
     <!-- Drop zone overlay -->
@@ -117,6 +127,7 @@
     <p class="footer-hint">Both devices must be on the same network (same public IP).</p>
   </footer>
 
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script src="/app.js"></script>
 </body>
 </html>

@@ -695,3 +695,80 @@ button:focus-visible, .peer-card:focus-visible {
   cursor: pointer;
 }
 
+/* Map section */
+.map-section {
+  margin-top: 1.5rem;
+  background: var(--surface);
+  border-radius: var(--radius);
+  border: 1px solid var(--surface-border);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+.map-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.map-header h3 {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.map-toggle-btn {
+  background: none;
+  border: 1px solid var(--surface-border);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.map-toggle-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.map-container {
+  width: 100%;
+  height: 220px;
+  background: #0d1b2a;
+}
+
+.map-container.collapsed {
+  display: none;
+}
+
+/* Leaflet custom marker styles */
+.device-marker {
+  background: var(--primary);
+  border: 3px solid white;
+  border-radius: 50%;
+  width: 14px;
+  height: 14px;
+  box-shadow: 0 2px 8px rgba(79, 195, 247, 0.5);
+}
+
+.device-marker.self {
+  background: var(--success);
+  box-shadow: 0 2px 8px rgba(102, 187, 106, 0.5);
+}
+
+.device-marker-label {
+  background: var(--surface);
+  border: 1px solid var(--surface-border);
+  border-radius: 6px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
