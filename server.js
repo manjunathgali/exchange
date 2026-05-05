@@ -35,11 +35,6 @@ function cleanStale(room) {
   }
 }
 
-function getRoom(ip) {
-  if (!rooms.has(ip)) rooms.set(ip, new Map());
-  return rooms.get(ip);
-}
-
 function getPeerList(room, excludeId) {
   const peers = [];
   room.forEach((p, id) => {
@@ -64,31 +59,50 @@ function handleAPI(req, res) {
     }
 
     const ip = getIP(req);
-    const room = getRoom(ip);
+    const roomKey = data.roomCode ? `code:${data.roomCode.toLowerCase().trim()}` : `ip:${ip}`;
+    if (!rooms.has(roomKey)) rooms.set(roomKey, new Map());
+    const room = rooms.get(roomKey);
     cleanStale(room);
 
-    const { action, peerId, peerName, to, message } = data;
+    const { action, peerId, peerName, peerMeta, to, message } = data;
 
     switch (action) {
       case 'join': {
         if (!peerId || !peerName) return respond(res, 400, { error: 'Missing peerId or peerName' });
         if (!room.has(peerId)) {
-          room.set(peerId, { name: peerName, lastSeen: Date.now(), messages: [] });
+          room.set(peerId, { name: peerName, lastSeen: Date.now(), messages: [], meta: peerMeta || null });
         } else {
           const p = room.get(peerId);
           p.lastSeen = Date.now();
           p.name = peerName;
+          if (peerMeta) p.meta = peerMeta;
         }
-        return respond(res, 200, { peers: getPeerList(room, peerId) });
+        const peers = [];
+        room.forEach((p, id) => {
+          if (id !== peerId) {
+            const entry = { id, name: p.name };
+            if (p.meta) entry.meta = p.meta;
+            peers.push(entry);
+          }
+        });
+        return respond(res, 200, { peers });
       }
 
       case 'poll': {
         if (!peerId) return respond(res, 400, { error: 'Missing peerId' });
         const peer = room.get(peerId);
-        if (!peer) return respond(res, 200, { messages: [], peers: [] });
+        if (!peer) return respond(res, 200, { messages: [], peers: [], expired: true });
         peer.lastSeen = Date.now();
         const messages = peer.messages.splice(0);
-        return respond(res, 200, { messages, peers: getPeerList(room, peerId) });
+        const peers = [];
+        room.forEach((p, id) => {
+          if (id !== peerId) {
+            const entry = { id, name: p.name };
+            if (p.meta) entry.meta = p.meta;
+            peers.push(entry);
+          }
+        });
+        return respond(res, 200, { messages, peers });
       }
 
       case 'signal': {
@@ -102,7 +116,7 @@ function handleAPI(req, res) {
 
       case 'leave': {
         if (peerId) room.delete(peerId);
-        if (room.size === 0) rooms.delete(ip);
+        if (room.size === 0) rooms.delete(roomKey);
         return respond(res, 200, { ok: true });
       }
 

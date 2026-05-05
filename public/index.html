@@ -28,6 +28,25 @@
       <span class="status-dot online" id="status-dot"></span>
     </div>
 
+    <!-- Room mode selector -->
+    <div id="room-section" class="room-section">
+      <div class="room-tabs">
+        <button id="tab-local" class="room-tab active">📶 Same Network</button>
+        <button id="tab-remote" class="room-tab">🌐 Any Network</button>
+      </div>
+      <div id="room-code-panel" class="room-code-panel hidden">
+        <p class="room-code-hint">Share this code with the other device to connect across the internet:</p>
+        <div class="room-code-display">
+          <span id="room-code-value" class="room-code-value"></span>
+          <button id="copy-room-code" class="copy-btn" aria-label="Copy code">📋</button>
+        </div>
+        <div class="room-code-join">
+          <input type="text" id="room-code-input" class="room-code-input" placeholder="Or enter a code..." maxlength="6" autocomplete="off">
+          <button id="join-room-btn" class="join-room-btn">Join</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Peers area -->
     <div id="peers-container" class="peers-container">
       <div id="no-peers" class="no-peers">

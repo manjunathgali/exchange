@@ -63,6 +63,15 @@
   const actionSendMsg = document.getElementById('action-send-msg');
   const actionCancel = document.getElementById('action-cancel');
 
+  // Room code elements
+  const tabLocal = document.getElementById('tab-local');
+  const tabRemote = document.getElementById('tab-remote');
+  const roomCodePanel = document.getElementById('room-code-panel');
+  const roomCodeValue = document.getElementById('room-code-value');
+  const copyRoomCode = document.getElementById('copy-room-code');
+  const roomCodeInput = document.getElementById('room-code-input');
+  const joinRoomBtn = document.getElementById('join-room-btn');
+
   // ============================================================
   // DEVICE DETECTION
   // ============================================================
@@ -74,6 +83,95 @@
     if (/Windows/.test(ua)) return { icon: '🖥️', type: 'Windows' };
     if (/Linux/.test(ua)) return { icon: '🐧', type: 'Linux' };
     return { icon: '💻', type: 'Device' };
+  }
+
+  // ============================================================
+  // ROOM CODE & NETWORK MODE
+  // ============================================================
+  let roomCode = null; // null = same-network mode, string = cross-network mode
+  let generatedRoomCode = null;
+
+  function generateRoomCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous chars
+    let code = '';
+    const arr = new Uint8Array(6);
+    crypto.getRandomValues(arr);
+    for (let i = 0; i < 6; i++) {
+      code += chars[arr[i] % chars.length];
+    }
+    return code;
+  }
+
+  tabLocal.addEventListener('click', () => {
+    tabLocal.classList.add('active');
+    tabRemote.classList.remove('active');
+    roomCodePanel.classList.add('hidden');
+    if (roomCode !== null) {
+      // Switch back to local mode
+      roomCode = null;
+      leaveAndRejoin();
+    }
+  });
+
+  tabRemote.addEventListener('click', () => {
+    tabRemote.classList.add('active');
+    tabLocal.classList.remove('active');
+    roomCodePanel.classList.remove('hidden');
+    // Generate a room code if we don't have one
+    if (!generatedRoomCode) {
+      generatedRoomCode = generateRoomCode();
+    }
+    roomCodeValue.textContent = generatedRoomCode;
+    // Auto-join our own room code
+    roomCode = generatedRoomCode;
+    leaveAndRejoin();
+  });
+
+  copyRoomCode.addEventListener('click', () => {
+    navigator.clipboard.writeText(generatedRoomCode).then(() => {
+      showToast('Code copied!', 'success');
+    });
+  });
+
+  joinRoomBtn.addEventListener('click', () => {
+    const code = roomCodeInput.value.trim().toUpperCase();
+    if (code.length < 4) {
+      showToast('Enter at least 4 characters', 'error');
+      return;
+    }
+    roomCode = code;
+    roomCodeValue.textContent = code;
+    generatedRoomCode = code;
+    leaveAndRejoin();
+    showToast(`Joined room: ${code}`, 'success');
+  });
+
+  roomCodeInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') joinRoomBtn.click();
+  });
+
+  async function leaveAndRejoin() {
+    // Leave current room
+    if (selfPeer) {
+      await apiCall({ action: 'leave', peerId: selfPeer.id, roomCode: roomCode === generatedRoomCode ? null : roomCode });
+    }
+    // Clear peers
+    peers.clear();
+    peerMissCount.clear();
+    peerLocations.clear();
+    renderPeers();
+    updateMapMarkers();
+    // Re-join with new room
+    const result = await apiCall({
+      action: 'join',
+      peerId: selfPeer.id,
+      peerName: selfPeer.name,
+      roomCode: roomCode,
+      peerMeta: selfLocation ? { lat: selfLocation.lat, lng: selfLocation.lng, device: detectDevice().type } : { device: detectDevice().type }
+    });
+    if (result && result.peers) {
+      syncPeers(result.peers);
+    }
   }
 
   // ============================================================
@@ -94,6 +192,10 @@
   }
 
   async function apiCall(body) {
+    // Always include roomCode in requests
+    if (roomCode && !body.roomCode) {
+      body.roomCode = roomCode;
+    }
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const res = await fetch('/api/rooms', {
@@ -106,7 +208,7 @@
         return await res.json();
       } catch (e) {
         if (attempt === 0) {
-          await new Promise(r => setTimeout(r, 500)); // wait 500ms before retry
+          await new Promise(r => setTimeout(r, 500));
           continue;
         }
         consecutiveFailures++;
@@ -132,7 +234,14 @@
     selfNameEl.textContent = selfPeer.name;
     selfInfo.classList.remove('hidden');
 
-    const result = await apiCall({ action: 'join', peerId: selfPeer.id, peerName: selfPeer.name });
+    const joinPayload = {
+      action: 'join',
+      peerId: selfPeer.id,
+      peerName: selfPeer.name,
+      peerMeta: { device: device.type }
+    };
+
+    const result = await apiCall(joinPayload);
     if (result && result.peers) {
       syncPeers(result.peers);
     }
@@ -155,7 +264,7 @@
       statusDot.classList.remove('online');
       // If we've failed multiple times, try to re-join
       if (consecutiveFailures >= 3) {
-        await apiCall({ action: 'join', peerId: selfPeer.id, peerName: selfPeer.name });
+        await apiCall({ action: 'join', peerId: selfPeer.id, peerName: selfPeer.name, peerMeta: { device: detectDevice().type, ...(selfLocation || {}) } });
       }
       return;
     }
@@ -198,13 +307,17 @@
         // Check if this peer recently left (debounce flapping)
         const leftAt = recentlyLeft.get(p.id);
         if (!leftAt || Date.now() - leftAt > 5000) {
-          // Only show toast if not a rapid reconnection
           showToast(`${p.name} appeared`, 'success');
         }
         recentlyLeft.delete(p.id);
         hasNewPeers = true;
       }
       peers.set(p.id, p);
+
+      // Extract location from peer metadata for map
+      if (p.meta && p.meta.lat && p.meta.lng) {
+        peerLocations.set(p.id, { lat: p.meta.lat, lng: p.meta.lng });
+      }
     }
 
     // Peers not in current list — increment miss count
@@ -226,6 +339,7 @@
     }
 
     renderPeers();
+    updateMapMarkers();
 
     // Share our location with new peers
     if (hasNewPeers) {
@@ -870,13 +984,20 @@
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         selfLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        // Share location with peers via signaling
+        // Re-register with location metadata
+        if (selfPeer) {
+          apiCall({
+            action: 'join',
+            peerId: selfPeer.id,
+            peerName: selfPeer.name,
+            peerMeta: { lat: selfLocation.lat, lng: selfLocation.lng, device: detectDevice().type }
+          });
+        }
         broadcastLocation();
         updateMapMarkers();
       },
       (err) => {
         console.warn('Geolocation denied:', err.message);
-        // Still show map if peers share their location
       },
       { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
     );
@@ -1044,10 +1165,14 @@
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && selfPeer) {
       // Re-register immediately and poll
-      apiCall({ action: 'join', peerId: selfPeer.id, peerName: selfPeer.name }).then(() => {
+      apiCall({
+        action: 'join',
+        peerId: selfPeer.id,
+        peerName: selfPeer.name,
+        peerMeta: { device: detectDevice().type, ...(selfLocation || {}) }
+      }).then(() => {
         poll();
       });
-      // Restart polling in case it was paused
       startPolling(POLL_IDLE_MS);
     }
   });
