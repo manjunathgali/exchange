@@ -18,10 +18,14 @@
   let selectedPeerForDrop = null;
   let activeChatPeer = null; // peerId of the peer we're chatting with
   const chatHistory = new Map(); // peerId -> [{ text, sent, time }]
+  let consecutiveFailures = 0;
+  const peerMissCount = new Map(); // peerId -> number of consecutive polls where peer was missing
+  const recentlyLeft = new Map(); // peerId -> timestamp (debounce re-appearances)
 
   const CHUNK_SIZE = 64 * 1024; // 64KB chunks
-  const POLL_IDLE_MS = 2000; // Poll interval when idle
-  const POLL_ACTIVE_MS = 400; // Poll interval during signaling (faster for ICE)
+  const POLL_IDLE_MS = 2500; // Poll interval when idle
+  const POLL_ACTIVE_MS = 500; // Poll interval during signaling
+  const MISS_THRESHOLD = 3; // Peer must be missing for 3 consecutive polls before considered "left"
 
   // ============================================================
   // DOM ELEMENTS
@@ -90,18 +94,27 @@
   }
 
   async function apiCall(body) {
-    try {
-      const res = await fetch('/api/rooms', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
-    } catch (e) {
-      console.warn('API call failed:', e.message);
-      return null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await fetch('/api/rooms', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        consecutiveFailures = 0;
+        return await res.json();
+      } catch (e) {
+        if (attempt === 0) {
+          await new Promise(r => setTimeout(r, 500)); // wait 500ms before retry
+          continue;
+        }
+        consecutiveFailures++;
+        console.warn('API call failed:', e.message, `(failures: ${consecutiveFailures})`);
+        return null;
+      }
     }
+    return null;
   }
 
   async function sendSignal(to, message) {
@@ -134,22 +147,34 @@
 
   async function poll() {
     if (!selfPeer) return;
+
+    // Always re-register as heartbeat (prevents TTL expiry)
     const result = await apiCall({ action: 'poll', peerId: selfPeer.id });
+
     if (!result) {
       statusDot.classList.remove('online');
+      // If we've failed multiple times, try to re-join
+      if (consecutiveFailures >= 3) {
+        await apiCall({ action: 'join', peerId: selfPeer.id, peerName: selfPeer.name });
+      }
       return;
     }
+
     statusDot.classList.add('online');
+
+    // If server says we expired, or lost our registration, re-join
+    if (result.expired || (result.peers && result.peers.length === 0 && peers.size > 0)) {
+      await apiCall({ action: 'join', peerId: selfPeer.id, peerName: selfPeer.name });
+      return; // skip this cycle, next poll will have fresh data
+    }
 
     if (result.peers) {
       syncPeers(result.peers);
     }
 
     if (result.messages && result.messages.length > 0) {
-      // Speed up polling when receiving signaling messages
       if (!isTransferring) {
         startPolling(POLL_ACTIVE_MS);
-        // Slow back down after 10s of no messages
         setTimeout(() => {
           if (!isTransferring) startPolling(POLL_IDLE_MS);
         }, 10000);
@@ -164,22 +189,39 @@
     const newIds = new Set(peerList.map(p => p.id));
     let hasNewPeers = false;
 
-    // New peers
+    // New peers (or returning peers)
     for (const p of peerList) {
+      // Reset miss count since peer is present
+      peerMissCount.delete(p.id);
+
       if (!peers.has(p.id)) {
-        showToast(`${p.name} appeared`, 'success');
+        // Check if this peer recently left (debounce flapping)
+        const leftAt = recentlyLeft.get(p.id);
+        if (!leftAt || Date.now() - leftAt > 5000) {
+          // Only show toast if not a rapid reconnection
+          showToast(`${p.name} appeared`, 'success');
+        }
+        recentlyLeft.delete(p.id);
         hasNewPeers = true;
       }
       peers.set(p.id, p);
     }
 
-    // Left peers
+    // Peers not in current list — increment miss count
     for (const [id, peer] of peers) {
       if (!newIds.has(id)) {
-        peers.delete(id);
-        cleanupPeerConnection(id);
-        peerLocations.delete(id);
-        showToast(`${peer.name} left`);
+        const misses = (peerMissCount.get(id) || 0) + 1;
+        peerMissCount.set(id, misses);
+
+        // Only remove after MISS_THRESHOLD consecutive misses
+        if (misses >= MISS_THRESHOLD) {
+          peers.delete(id);
+          peerMissCount.delete(id);
+          peerLocations.delete(id);
+          cleanupPeerConnection(id);
+          recentlyLeft.set(id, Date.now());
+          showToast(`${peer.name} left`);
+        }
       }
     }
 
@@ -1001,9 +1043,12 @@
   // Rejoin on visibility change (mobile tab switching)
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && selfPeer) {
-      // Re-register immediately
-      apiCall({ action: 'join', peerId: selfPeer.id, peerName: selfPeer.name });
-      poll();
+      // Re-register immediately and poll
+      apiCall({ action: 'join', peerId: selfPeer.id, peerName: selfPeer.name }).then(() => {
+        poll();
+      });
+      // Restart polling in case it was paused
+      startPolling(POLL_IDLE_MS);
     }
   });
 

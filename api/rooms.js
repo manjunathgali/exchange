@@ -18,7 +18,7 @@ if (redisUrl && redisToken) {
 // IN-MEMORY FALLBACK (for local dev or when Redis not configured)
 // ============================================================
 const memRooms = global.__localdrop_rooms || (global.__localdrop_rooms = new Map());
-const PEER_TTL = 30;
+const PEER_TTL = 60; // 60 seconds before a peer is considered stale
 
 function getIP(req) {
   const realIp = req.headers['x-real-ip'];
@@ -54,9 +54,14 @@ async function redisJoin(roomKey, peerId, peerName) {
 async function redisPoll(roomKey, peerId) {
   const peerKey = `${roomKey}:peer:${peerId}`;
   const exists = await redis.exists(peerKey);
-  if (!exists) return { messages: [], peers: [] };
+  if (!exists) {
+    // Peer expired — return empty so client knows to re-join
+    return { messages: [], peers: [], expired: true };
+  }
 
+  // Refresh TTL (heartbeat)
   await redis.expire(peerKey, PEER_TTL);
+  await redis.expire(roomKey, PEER_TTL * 2);
 
   // Get and clear messages atomically
   const msgKey = `${roomKey}:msg:${peerId}`;
