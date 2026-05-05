@@ -18,8 +18,8 @@
   let selectedPeerForDrop = null;
 
   const CHUNK_SIZE = 64 * 1024; // 64KB chunks
-  const POLL_IDLE_MS = 1500; // Poll interval when idle
-  const POLL_ACTIVE_MS = 300; // Poll interval during signaling (faster for ICE)
+  const POLL_IDLE_MS = 2000; // Poll interval when idle
+  const POLL_ACTIVE_MS = 400; // Poll interval during signaling (faster for ICE)
 
   // ============================================================
   // DOM ELEMENTS
@@ -377,7 +377,22 @@
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
       { urls: 'stun:stun2.l.google.com:19302' },
-      { urls: 'stun:stun3.l.google.com:19302' }
+      { urls: 'stun:stun3.l.google.com:19302' },
+      {
+        urls: 'turn:openrelay.metered.ca:80',
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
+      },
+      {
+        urls: 'turn:openrelay.metered.ca:443',
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
+      },
+      {
+        urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+        username: 'openrelayproject',
+        credential: 'openrelayproject'
+      }
     ]
   };
 
@@ -385,9 +400,26 @@
     const pc = new RTCPeerConnection(rtcConfig);
     peerConnections.set(peerId, pc);
 
+    // Batch ICE candidates to reduce API calls
+    let iceCandidateBuffer = [];
+    let iceFlushTimer = null;
+
+    function flushIceCandidates() {
+      if (iceCandidateBuffer.length === 0) return;
+      const candidates = iceCandidateBuffer.splice(0);
+      for (const candidate of candidates) {
+        sendSignal(peerId, { type: 'ice-candidate', candidate });
+      }
+    }
+
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        sendSignal(peerId, { type: 'ice-candidate', candidate: event.candidate });
+        iceCandidateBuffer.push(event.candidate);
+        clearTimeout(iceFlushTimer);
+        iceFlushTimer = setTimeout(flushIceCandidates, 100);
+      } else {
+        // All candidates gathered
+        flushIceCandidates();
       }
     };
 
@@ -431,9 +463,25 @@
     const pc = new RTCPeerConnection(rtcConfig);
     peerConnections.set(msg.from, pc);
 
+    // Batch ICE candidates
+    let iceCandidateBuffer = [];
+    let iceFlushTimer = null;
+
+    function flushIceCandidates() {
+      if (iceCandidateBuffer.length === 0) return;
+      const candidates = iceCandidateBuffer.splice(0);
+      for (const candidate of candidates) {
+        sendSignal(msg.from, { type: 'ice-candidate', candidate });
+      }
+    }
+
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        sendSignal(msg.from, { type: 'ice-candidate', candidate: event.candidate });
+        iceCandidateBuffer.push(event.candidate);
+        clearTimeout(iceFlushTimer);
+        iceFlushTimer = setTimeout(flushIceCandidates, 100);
+      } else {
+        flushIceCandidates();
       }
     };
 
