@@ -957,11 +957,14 @@
   const mapSection = document.getElementById('map-section');
   const mapContainer = document.getElementById('map');
   const mapToggleBtn = document.getElementById('map-toggle');
+  const mapNoLocation = document.getElementById('map-no-location');
+  const requestLocationBtn = document.getElementById('request-location-btn');
   let map = null;
   let mapMarkers = new Map(); // peerId -> marker
   let selfMarker = null;
   let selfLocation = null;
   let mapVisible = true;
+  let locationDenied = false;
 
   function initMap() {
     if (map) return;
@@ -979,11 +982,18 @@
   }
 
   function requestLocation() {
-    if (!navigator.geolocation) return;
+    if (!navigator.geolocation) {
+      locationDenied = true;
+      return;
+    }
 
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         selfLocation = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        locationDenied = false;
+        // Hide the "enable location" prompt
+        mapNoLocation.classList.add('hidden');
+        mapContainer.classList.remove('hidden');
         // Re-register with location metadata
         if (selfPeer) {
           apiCall({
@@ -998,10 +1008,21 @@
       },
       (err) => {
         console.warn('Geolocation denied:', err.message);
+        locationDenied = true;
+        // Show the "enable location" prompt if map is visible
+        if (!mapSection.classList.contains('hidden') && peerLocations.size === 0) {
+          mapContainer.classList.add('hidden');
+          mapNoLocation.classList.remove('hidden');
+        }
       },
       { enableHighAccuracy: false, timeout: 10000, maximumAge: 60000 }
     );
   }
+
+  // "Enable Location" button
+  requestLocationBtn.addEventListener('click', () => {
+    requestLocation();
+  });
 
   function broadcastLocation() {
     if (!selfLocation || !selfPeer) return;
@@ -1026,11 +1047,30 @@
   }
 
   function updateMapMarkers() {
+    // Show map whenever we have peers or our own location
+    const hasPeers = peers.size > 0;
     const hasAnyLocation = selfLocation || peerLocations.size > 0;
-    if (!hasAnyLocation) return;
 
-    // Show map section
+    if (!hasPeers && !hasAnyLocation) {
+      mapSection.classList.add('hidden');
+      return;
+    }
+
+    // Show map section as soon as there are peers (even without location)
     mapSection.classList.remove('hidden');
+
+    // Only init map if Leaflet is loaded and we have at least one location
+    if (typeof L === 'undefined') return;
+    if (!hasAnyLocation) {
+      // Show "enable location" prompt
+      mapContainer.classList.add('hidden');
+      mapNoLocation.classList.remove('hidden');
+      return;
+    }
+
+    // We have location data — show the map
+    mapContainer.classList.remove('hidden');
+    mapNoLocation.classList.add('hidden');
     initMap();
 
     const bounds = [];
@@ -1043,13 +1083,13 @@
       } else {
         const icon = L.divIcon({
           className: '',
-          html: `<div class="device-marker self"></div>`,
+          html: '<div class="device-marker self"></div>',
           iconSize: [14, 14],
           iconAnchor: [7, 7]
         });
         selfMarker = L.marker([selfLocation.lat, selfLocation.lng], { icon })
           .addTo(map)
-          .bindTooltip(`<div class="device-marker-label">📍 You (${selfPeer.name})</div>`, {
+          .bindTooltip('<div class="device-marker-label">📍 You (' + escapeHtml(selfPeer.name) + ')</div>', {
             permanent: false,
             direction: 'top',
             offset: [0, -10],
@@ -1069,13 +1109,13 @@
       } else {
         const icon = L.divIcon({
           className: '',
-          html: `<div class="device-marker"></div>`,
+          html: '<div class="device-marker"></div>',
           iconSize: [14, 14],
           iconAnchor: [7, 7]
         });
         const marker = L.marker([loc.lat, loc.lng], { icon })
           .addTo(map)
-          .bindTooltip(`<div class="device-marker-label">💻 ${escapeHtml(name)}</div>`, {
+          .bindTooltip('<div class="device-marker-label">💻 ' + escapeHtml(name) + '</div>', {
             permanent: false,
             direction: 'top',
             offset: [0, -10],
@@ -1103,7 +1143,7 @@
     }
 
     // Invalidate size in case map was hidden
-    setTimeout(() => map.invalidateSize(), 100);
+    setTimeout(() => { if (map) map.invalidateSize(); }, 150);
   }
 
   // Map toggle

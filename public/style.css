@@ -876,6 +876,33 @@ button:focus-visible, .peer-card:focus-visible {
   display: none;
 }
 
+.map-no-location {
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.map-no-location p {
+  margin-bottom: 0.75rem;
+}
+
+.request-location-btn {
+  background: var(--primary);
+  color: #1a1a2e;
+  border: none;
+  border-radius: 8px;
+  padding: 0.5rem 1.2rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.request-location-btn:hover {
+  background: #81d4fa;
+}
+
 /* Leaflet custom marker styles */
 .device-marker {
   background: var(--primary);
